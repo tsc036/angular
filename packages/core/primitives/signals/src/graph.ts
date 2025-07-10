@@ -204,6 +204,37 @@ export interface ReactiveNode {
   kind: string;
 }
 
+export class ReactiveNodeImpl implements ReactiveNode {
+  version = 0 as Version;
+  lastCleanEpoch = 0 as Version;
+  dirty = false;
+  producerNode: ReactiveNode[] | undefined = undefined;
+  producerLastReadVersion = undefined;
+  producerIndexOfThis = undefined;
+  nextProducerIndex = 0;
+
+  liveConsumerNode = undefined;
+  liveConsumerIndexOfThis = undefined;
+  // consumerAllowSignalWrites = false;
+  // consumerIsAlwaysLive = false;
+  // kind = 'unknown';
+  producerMustRecompute() {
+    return false;
+  }
+  get consumerIsAlwaysLive() {
+    return false;
+  }
+  get kind() {
+    return 'unknown';
+  }
+  get consumerAllowSignalWrites() {
+    return false;
+  }
+  producerRecomputeValue(): void {}
+  consumerMarkedDirty(): void {}
+  consumerOnSignalRead(): void {}
+}
+
 interface ConsumerNode extends ReactiveNode {
   producerNode: NonNullable<ReactiveNode['producerNode']>;
   producerIndexOfThis: NonNullable<ReactiveNode['producerIndexOfThis']>;

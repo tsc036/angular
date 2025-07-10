@@ -14,6 +14,7 @@ import {
   producerUpdateValueVersion,
   REACTIVE_NODE,
   ReactiveNode,
+  ReactiveNodeImpl,
   setActiveConsumer,
   SIGNAL,
   runPostProducerCreatedFn,
@@ -60,12 +61,12 @@ export function createComputed<T>(
   computation: () => T,
   equal?: ValueEqualityFn<T>,
 ): ComputedGetter<T> {
-  const node: ComputedNode<T> = Object.create(COMPUTED_NODE);
-  node.computation = computation;
+  const node: ComputedNode<T> = new ComputedClassImpl(computation, equal);
+  // node.computation = computation;
 
-  if (equal !== undefined) {
-    node.equal = equal;
-  }
+  // if (equal !== undefined) {
+  //   node.equal = equal;
+  // }
 
   const computed = () => {
     // Check if the value needs updating before returning it.
@@ -173,3 +174,75 @@ const COMPUTED_NODE = /* @__PURE__ */ (() => {
     },
   };
 })();
+
+class ComputedClassImpl<T> extends ReactiveNodeImpl implements ComputedNode<T> {
+  value: T;
+  error: unknown;
+  equal: ValueEqualityFn<T>;
+  constructor(
+    readonly computation: () => T,
+    equal?: ValueEqualityFn<T>,
+  ) {
+    super();
+    this.value = UNSET;
+    this.dirty = true;
+    this.error = null;
+    if (equal !== undefined) {
+      this.equal = equal;
+    } else {
+      this.equal = defaultEquals;
+    }
+  }
+  override producerMustRecompute(): boolean {
+    // Force a recomputation if there's no current value, or if the current
+    // value is in the process of being calculated (which should throw an
+    // error).
+    return this.value === UNSET || this.value === COMPUTING;
+  }
+
+  override get kind() {
+    return 'computed';
+  }
+
+  override producerRecomputeValue(): void {
+    if (this.value === COMPUTING) {
+      // Our computation somehow led to a cyclic read of itself.
+      throw new Error(
+        typeof ngDevMode !== 'undefined' && ngDevMode ? 'Detected cycle in computations.' : '',
+      );
+    }
+
+    const oldValue = this.value;
+    this.value = COMPUTING;
+
+    const prevConsumer = consumerBeforeComputation(this);
+    let newValue: T;
+    let wasEqual = false;
+    try {
+      newValue = this.computation();
+      // We want to mark this node as errored if calling `equal` throws;
+      // however, we don't want to track any reactive reads inside `equal`.
+      setActiveConsumer(null);
+      wasEqual =
+        oldValue !== UNSET &&
+        oldValue !== ERRORED &&
+        newValue !== ERRORED &&
+        this.equal(oldValue, newValue);
+    } catch (err) {
+      newValue = ERRORED;
+      this.error = err;
+    } finally {
+      consumerAfterComputation(this, prevConsumer);
+    }
+
+    if (wasEqual) {
+      // No change to `valueVersion` - old and new values are
+      // semantically equivalent.
+      this.value = oldValue;
+      return;
+    }
+
+    this.value = newValue;
+    this.version++;
+  }
+}

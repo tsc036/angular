@@ -40,6 +40,7 @@ export {
   runPostProducerCreatedFn,
   setActiveConsumer,
   setPostProducerCreatedFn,
+  ReactiveNodeImpl,
 } from './src/graph';
 export {
   SIGNAL_NODE,

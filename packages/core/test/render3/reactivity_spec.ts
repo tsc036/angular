@@ -386,6 +386,7 @@ describe('reactivity', () => {
         data = '';
         cdr = inject(ChangeDetectorRef);
         effectRef = effect(() => {
+          debugger;
           if (this.data !== source()) {
             this.data = source();
             this.cdr.markForCheck();
@@ -405,6 +406,7 @@ describe('reactivity', () => {
       const fix = TestBed.createComponent(TestCmp);
       await fix.whenStable();
 
+      debugger;
       source.set('test');
       await fix.whenStable();
 

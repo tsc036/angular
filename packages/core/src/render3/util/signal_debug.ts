@@ -14,7 +14,7 @@ import {assertTNode, assertLView} from '../assert';
 import {getFrameworkDIDebugData} from '../debug/framework_injector_profiler';
 import {NodeInjector, getNodeInjectorTNode, getNodeInjectorLView} from '../di';
 import {REACTIVE_TEMPLATE_CONSUMER, HOST, LView} from '../interfaces/view';
-import {EffectNode, EffectRefImpl, ROOT_EFFECT_NODE, VIEW_EFFECT_NODE} from '../reactivity/effect';
+import {EffectNode, EffectRefImpl} from '../reactivity/effect';
 import {Injector} from '../../di/injector';
 import {R3Injector} from '../../di/r3_injector';
 import {throwError} from '../../util/assert';

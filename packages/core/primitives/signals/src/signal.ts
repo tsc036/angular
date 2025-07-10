@@ -18,6 +18,7 @@ import {
   ReactiveHookFn,
   runPostProducerCreatedFn,
   SIGNAL,
+  ReactiveNodeImpl,
 } from './graph';
 
 // Required as the signals library is in a separate package, so we need to explicitly ensure the
@@ -54,11 +55,11 @@ export function createSignal<T>(
   initialValue: T,
   equal?: ValueEqualityFn<T>,
 ): [SignalGetter<T>, SignalSetter<T>, SignalUpdater<T>] {
-  const node: SignalNode<T> = Object.create(SIGNAL_NODE);
-  node.value = initialValue;
-  if (equal !== undefined) {
-    node.equal = equal;
-  }
+  const node: SignalNode<T> = new SignalClassImpl(initialValue, equal);
+  // node.value = initialValue;
+  // if (equal !== undefined) {
+  //   node.equal = equal;
+  // }
   const getter = (() => signalGetFn(node)) as SignalGetter<T>;
   (getter as any)[SIGNAL] = node;
   if (typeof ngDevMode !== 'undefined' && ngDevMode) {
@@ -123,4 +124,21 @@ function signalValueChanged<T>(node: SignalNode<T>): void {
   producerIncrementEpoch();
   producerNotifyConsumers(node);
   postSignalSetFn?.(node);
+}
+
+class SignalClassImpl<T> extends ReactiveNodeImpl implements SignalNode<T> {
+  value: T;
+  equal: ValueEqualityFn<T>;
+  constructor(initialValue: T, equal?: ValueEqualityFn<T>) {
+    super();
+    this.value = initialValue;
+    if (equal !== undefined) {
+      this.equal = equal;
+    } else {
+      this.equal = defaultEquals;
+    }
+  }
+  override get kind() {
+    return 'signal';
+  }
 }
