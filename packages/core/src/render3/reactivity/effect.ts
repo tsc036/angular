@@ -50,9 +50,9 @@ export interface EffectRef {
 }
 
 export class EffectRefImpl implements EffectRef {
-  [SIGNAL]: Effect;
+  [SIGNAL]: EffectNode;
 
-  constructor(node: Effect) {
+  constructor(node: EffectNode) {
     this[SIGNAL] = node;
   }
 
@@ -155,7 +155,7 @@ export function effect(
   const injector = options?.injector ?? inject(Injector);
   let destroyRef = options?.manualCleanup !== true ? injector.get(DestroyRef) : null;
 
-  let node: Effect;
+  let node: EffectNode;
 
   const viewContext = injector.get(ViewContext, null, {optional: true});
   const notifier = injector.get(ChangeDetectionScheduler);
@@ -166,7 +166,7 @@ export function effect(
       // automatically destroyed without the need for an explicit `DestroyRef` registration.
       destroyRef = null;
     }
-    node = new ViewEffectClassImpl(effectFn, viewContext.view, notifier, destroyRef, options);
+    node = new ViewEffectClassImpl(effectFn, viewContext.view, notifier, destroyRef, injector);
   } else {
     // This effect was created outside the context of a view, and will be scheduled independently.
     node = new RootEffectClassImpl(
@@ -174,7 +174,7 @@ export function effect(
       notifier,
       injector.get(EffectScheduler),
       destroyRef,
-      options,
+      injector,
     );
   }
   const effectRef = new EffectRefImpl(node);
@@ -183,7 +183,7 @@ export function effect(
     node.debugName = options?.debugName ?? '';
     const prevInjectorProfilerContext = setInjectorProfilerContext({injector, token: null});
     try {
-      emitEffectCreatedEvent(node);
+      emitEffectCreatedEvent(effectRef);
     } finally {
       setInjectorProfilerContext(prevInjectorProfilerContext);
     }
@@ -192,17 +192,21 @@ export function effect(
   return effectRef;
 }
 
-export interface EffectNode extends ReactiveNode, SchedulableEffect {
-  hasRun: boolean;
-  cleanupFns: EffectCleanupFn[] | undefined;
-  injector: Injector;
-  notifier: ChangeDetectionScheduler;
+// export interface EffectNode extends ReactiveNode, SchedulableEffect {
+//   hasRun: boolean;
+//   cleanupFns: EffectCleanupFn[] | undefined;
+//   injector: Injector;
+//   notifier: ChangeDetectionScheduler;
 
-  onDestroyFn: () => void;
-  fn: (cleanupFn: EffectCleanupRegisterFn) => void;
-  run(): void;
-  destroy(): void;
-  maybeCleanup(): void;
+//   onDestroyFn: () => void;
+//   fn: (cleanupFn: EffectCleanupRegisterFn) => void;
+//   run(): void;
+//   destroy(): void;
+//   maybeCleanup(): void;
+// }
+
+export interface EffectNode extends Effect {
+  injector: Injector;
 }
 
 interface Effect extends ReactiveNode {
@@ -252,16 +256,16 @@ export class EffectImpl extends ReactiveNodeImpl implements Effect {
   }
 }
 
-export class AngularEffectBaseImpl extends EffectImpl implements SchedulableEffect, EffectRef {
+export class AngularEffectBaseImpl extends EffectImpl implements SchedulableEffect, EffectNode {
   cleanupFns: EffectCleanupFn[] | undefined = undefined;
   zone = typeof Zone !== 'undefined' ? Zone.current : null;
-  onDestroyFn: (() => void) | null = null;
+  onDestroyFn: () => void = noop;
   constructor(
     effectFn: (cleanupFn: EffectCleanupRegisterFn) => void,
     readonly notificationSource: NotificationSource,
     readonly notifier: ChangeDetectionScheduler,
     readonly destroyRef: DestroyRef | null,
-    readonly options?: CreateEffectOptions,
+    readonly injector: Injector,
   ) {
     super(effectFn);
     this.dirty = true;
@@ -289,6 +293,15 @@ export class AngularEffectBaseImpl extends EffectImpl implements SchedulableEffe
     }
   }
 
+  override run() {
+    const prevRefreshingViews = setIsRefreshingViews(false);
+    try {
+      super.run();
+    } finally {
+      setIsRefreshingViews(prevRefreshingViews);
+    }
+  }
+
   override consumerMarkedDirty() {
     this.notifier.notify(this.notificationSource);
   }
@@ -296,7 +309,7 @@ export class AngularEffectBaseImpl extends EffectImpl implements SchedulableEffe
   override destroy() {
     super.destroy();
     this.cleanup();
-    this.onDestroyFn?.();
+    this.onDestroyFn();
   }
 }
 
@@ -306,11 +319,12 @@ export class ViewEffectClassImpl extends AngularEffectBaseImpl implements ViewEf
     readonly view: LView,
     notifier: ChangeDetectionScheduler,
     destroyRef: DestroyRef | null,
-    options?: CreateEffectOptions,
+    injector: Injector,
   ) {
-    super(fn, NotificationSource.ViewEffect, notifier, destroyRef, options);
+    super(fn, NotificationSource.ViewEffect, notifier, destroyRef, injector);
     view[EFFECTS] ??= new Set();
     view[EFFECTS].add(this);
+    this.consumerMarkedDirty();
   }
 
   override consumerMarkedDirty() {
@@ -330,9 +344,9 @@ export class RootEffectClassImpl extends AngularEffectBaseImpl implements RootEf
     notifier: ChangeDetectionScheduler,
     readonly scheduler: EffectScheduler,
     destroyRef: DestroyRef | null,
-    options?: CreateEffectOptions,
+    injector: Injector,
   ) {
-    super(fn, NotificationSource.RootEffect, notifier, destroyRef, options);
+    super(fn, NotificationSource.RootEffect, notifier, destroyRef, injector);
     this.scheduler = scheduler;
     this.scheduler.add(this);
     this.notifier.notify(this.notificationSource);
@@ -355,11 +369,11 @@ function onCleanup(cleanupFn: EffectCleanupFn) {
   }
 }
 
-export interface ViewEffectNode extends Effect, SchedulableEffect {
+export interface ViewEffectNode extends EffectNode, SchedulableEffect {
   view: LView;
 }
 
-export interface RootEffectNode extends Effect, SchedulableEffect {
+export interface RootEffectNode extends EffectNode, SchedulableEffect {
   scheduler: EffectScheduler;
 }
 
